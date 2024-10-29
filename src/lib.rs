@@ -1,5 +1,5 @@
 #![allow(incomplete_features)]
-#![feature(return_type_notation)]
+#![feature(return_type_notation, type_alias_impl_trait)]
 
 use std::{pin::Pin, sync::Mutex};
 
@@ -12,10 +12,14 @@ pub mod seek;
 pub mod write;
 pub use embedded_io_adapters::futures_03 as from;
 
-
-pub fn read_writer<E: embedded_io_async::Read<read(..): Send> + embedded_io_async::Write<write(..): Send, flush(..): Send> + Send + 'static>(
+pub fn read_writer<'a,
+    E: embedded_io_async::Read<read(..): Send>
+        + embedded_io_async::Write<write(..): Send, flush(..): Send>
+        + Send
+        + 'a,
+>(
     a: E,
-) -> impl AsyncRead + AsyncWrite + Unpin + Send  + 'static
+) -> impl AsyncRead + AsyncWrite + Unpin + Send + 'a
 where
     <E as ErrorType>::Error: Into<std::io::Error> + Send,
 {
@@ -25,21 +29,62 @@ where
     let b = write::SimpleAsyncWriter::new(b);
     return merge_io::MergeIO::new(a, b);
 }
+pub fn read_writer_unsend<
+'a,
+    E: embedded_io_async::Read
+        + embedded_io_async::Write
+        + Send
+        + 'a,
+>(
+    a: E,
+) -> impl AsyncRead + AsyncWrite + Unpin + 'a
+where
+    <E as ErrorType>::Error: Into<std::io::Error>,
+{
+    let a = mutex::Mutexed::new(a);
+    let b = a.clone();
+    let a = read::SimpleAsyncReader::new(a);
+    let b = write::SimpleAsyncWriter::new(b);
+    return merge_io::MergeIO::new(a, b);
+}
 pub fn read_write_seeeker<
+'a,
     E: embedded_io_async::Read<read(..): Send>
         + embedded_io_async::Write<write(..): Send, flush(..): Send>
         + embedded_io_async::Seek<seek(..): Send>
         + Send
-        + 'static,
+        + 'a,
 >(
     a: E,
-) -> impl AsyncRead + AsyncWrite + AsyncSeek + Unpin + Send + 'static
+) -> impl AsyncRead + AsyncWrite + AsyncSeek + Unpin + Send + 'a
 where
-    <E as ErrorType>::Error: Into<std::io::Error> + Send ,
+    <E as ErrorType>::Error: Into<std::io::Error> + Send,
 {
     let a = mutex::Mutexed::new(a);
     let b = a.clone();
     let a = read_writer(a);
+    let b = seek::SimpleAsyncSeeker::new(b);
+    return MergeSeek {
+        readwrite: a,
+        seek: b,
+    };
+}
+pub fn read_write_seeeker_unsend<
+'a,
+    E: embedded_io_async::Read
+        + embedded_io_async::Write
+        + embedded_io_async::Seek
+        + Send
+        + 'a,
+>(
+    a: E,
+) -> impl AsyncRead + AsyncWrite + AsyncSeek + Unpin + 'a
+where
+    <E as ErrorType>::Error: Into<std::io::Error> + Send,
+{
+    let a = mutex::Mutexed::new(a);
+    let b = a.clone();
+    let a = read_writer_unsend(a);
     let b = seek::SimpleAsyncSeeker::new(b);
     return MergeSeek {
         readwrite: a,

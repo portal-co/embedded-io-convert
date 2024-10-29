@@ -8,6 +8,7 @@ description = "Convert embedded-io-async types back to futures ones (nightly onl
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+either = "1.13.0"
 embedded-io-adapters = {version="0.6.1",features=["futures-03"]}
 embedded-io-async = "0.6.1"
 futures = "0.3.30"

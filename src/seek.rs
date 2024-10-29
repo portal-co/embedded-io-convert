@@ -10,38 +10,31 @@ use pin_project::pin_project;
 // use crate::MutexFuture;
 
 #[pin_project]
-pub struct SimpleAsyncSeeker<R>
+pub struct SimpleAsyncSeeker<R: Seek<Error: Into<std::io::Error>>>
 where
     R: embedded_io_async::Seek,
 {
-    state: State<R>,
+    state: internals::State<R>,
 }
-impl<R: Seek> SimpleAsyncSeeker<R> {
+impl<R: Seek<Error: Into<std::io::Error>>> SimpleAsyncSeeker<R> {
     pub fn new(r: R) -> Self {
         return Self {
-            state: State::Idle(r),
+            state: internals::State::Idle(r),
         };
     }
 }
+mod internals{use super::*;
 type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-enum State<R> {
+type Seeked<R: Seek<Error: Into<std::io::Error>>> = impl Future<Output = (R, io::Result<u64>)>;
+
+pub enum State<R: Seek<Error: Into<std::io::Error>>> {
     Idle(R),
-    Pending(BoxFut<(R, io::Result<u64>)>),
+    Pending(Pin<Box<Seeked<R>>>),
     Transitional,
 }
-impl<R> AsyncSeek for SimpleAsyncSeeker<R>
-where
-    // new: R must now be `'static`, since it's captured
-    // by the future which is, itself, `'static`.
-    R: embedded_io_async::Seek<seek(..): Send> + Send + 'static,
-    R::Error: Into<std::io::Error> + Send + 'static,
-{
-    fn poll_seek(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        pos: io::SeekFrom,
-    ) -> Poll<io::Result<u64>> {
+impl<R: Seek<Error: Into<std::io::Error>>> SimpleAsyncSeeker<R>{
+    fn get_seeked(self: Pin<&mut Self>, pos: io::SeekFrom) -> Pin<Box<Seeked<R>>>{
         let proj = self.project();
         let mut state = State::Transitional;
         std::mem::swap(proj.state, &mut state);
@@ -57,6 +50,23 @@ where
             }
             State::Transitional => unreachable!(),
         };
+        return fut;
+    }
+}
+impl<R> AsyncSeek for SimpleAsyncSeeker<R>
+where
+    // new: R must now be `'static`, since it's captured
+    // by the future which is, itself, `'static`.
+    R: embedded_io_async::Seek,
+    R::Error: Into<std::io::Error>,
+{
+    fn poll_seek(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        pos: io::SeekFrom,
+    ) -> Poll<io::Result<u64>> {
+        let mut fut  = self.as_mut().get_seeked(pos);
+        let proj = self.project();
 
         match fut.as_mut().poll(cx) {
             Poll::Ready((inner, result)) => {
@@ -81,4 +91,5 @@ where
             }
         }
     }
+}
 }

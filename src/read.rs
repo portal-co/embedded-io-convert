@@ -1,8 +1,8 @@
 use core::error::Error;
+use core::pin::pin;
 use core::task::Poll;
-use core::{ pin::pin};
 use core::{pin::Pin, task::Context};
-use std::io;
+// use std::io;
 
 use either::Either;
 use futures::{AsyncRead, Future};
@@ -30,8 +30,8 @@ mod internals {
     use super::*;
     type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-    type DidRead<R: embedded_io_async::Read> =
-        impl Future<Output = (R, Vec<u8>, Result<usize,R::Error>)>;
+    pub type DidRead<R: embedded_io_async::Read> =
+        impl Future<Output = (R, Vec<u8>, Result<usize, R::Error>)>;
 
     pub enum State<R: embedded_io_async::Read> {
         Idle(R, Vec<u8>),
@@ -39,7 +39,7 @@ mod internals {
         Transitional,
     }
     impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
-        fn get_fut(self: Pin<&mut Self>, buf: &mut [u8]) -> Pin<Box<DidRead<R>>> {
+        pub(crate) fn get_fut(self: Pin<&mut Self>, buf: &mut [u8]) -> Pin<Box<DidRead<R>>> {
             let proj = self.project();
             let mut state = State::Transitional;
             std::mem::swap(proj.state, &mut state);
@@ -66,6 +66,8 @@ mod internals {
             return fut;
         }
     }
+
+    #[cfg(feature = "futures")]
     impl<R> AsyncRead for SimpleAsyncReader<R>
     where
         // new: R must now be `'static`, since it's captured
@@ -78,7 +80,7 @@ mod internals {
             mut self: Pin<&mut Self>,
             cx: &mut Context<'_>,
             buf: &mut [u8],
-        ) -> Poll<io::Result<usize>> {
+        ) -> Poll<std::io::Result<usize>> {
             let mut fut = self.as_mut().get_fut(buf);
             let proj = self.project();
 
@@ -103,6 +105,39 @@ mod internals {
                     *proj.state = State::Pending(fut);
                     Poll::Pending
                 }
+            }
+        }
+    }
+}
+impl<R: embedded_io_async::Read<Error = E>,E> SimpleAsyncReader<R> {
+    pub fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<Result<usize, E>> {
+        let mut fut = self.as_mut().get_fut(buf);
+        let proj = self.project();
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready((inner, mut internal_buf, result)) => {
+                // tracing::debug!("future was ready!");
+                if let Ok(n) = &result {
+                    let n = *n;
+                    unsafe { internal_buf.set_len(n) }
+
+                    let dst = &mut buf[..n];
+                    let src = &internal_buf[..];
+                    dst.copy_from_slice(src);
+                } else {
+                    unsafe { internal_buf.set_len(0) }
+                }
+                *proj.state = internals::State::Idle(inner, internal_buf);
+                Poll::Ready(result.map_err(Into::into))
+            }
+            Poll::Pending => {
+                // tracing::debug!("future was pending!");
+                *proj.state = internals::State::Pending(fut);
+                Poll::Pending
             }
         }
     }

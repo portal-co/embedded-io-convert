@@ -3,11 +3,13 @@
 #![no_std]
 #[macro_use]
 extern crate alloc;
+#[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
 use core::{pin::Pin};
 
 use embedded_io_async::ErrorType;
+#[cfg(feature = "futures")]
 use futures::{AsyncRead, AsyncSeek, AsyncWrite, Future};
 
 pub mod mutex;
@@ -15,7 +17,7 @@ pub mod read;
 pub mod seek;
 pub mod write;
 pub use embedded_io_adapters::futures_03 as from;
-
+#[cfg(feature = "futures")]
 pub fn read_writer<'a,
     E: embedded_io_async::Read<read(..): Send>
         + embedded_io_async::Write<write(..): Send, flush(..): Send>
@@ -33,6 +35,7 @@ where
     let b = write::SimpleAsyncWriter::new(b);
     return merge_io::MergeIO::new(a, b);
 }
+#[cfg(feature = "futures")]
 pub fn read_writer_unsend<
 'a,
     E: embedded_io_async::Read
@@ -51,6 +54,7 @@ where
     let b = write::SimpleAsyncWriter::new(b);
     return merge_io::MergeIO::new(a, b);
 }
+#[cfg(feature = "futures")]
 pub fn read_write_seeeker<
 'a,
     E: embedded_io_async::Read<read(..): Send>
@@ -73,6 +77,7 @@ where
         seek: b,
     };
 }
+#[cfg(feature = "futures")]
 pub fn read_write_seeeker_unsend<
 'a,
     E: embedded_io_async::Read
@@ -99,6 +104,7 @@ pub struct MergeSeek<RW, S> {
     pub readwrite: RW,
     pub seek: S,
 }
+#[cfg(feature = "futures")]
 impl<RW: AsyncRead + Unpin, S: Unpin> AsyncRead for MergeSeek<RW, S> {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -115,6 +121,7 @@ impl<RW: AsyncRead + Unpin, S: Unpin> AsyncRead for MergeSeek<RW, S> {
         return AsyncRead::poll_read_vectored(Pin::new(&mut self.get_mut().readwrite), cx, bufs);
     }
 }
+#[cfg(feature = "futures")]
 impl<RW: AsyncWrite + Unpin, S: Unpin> AsyncWrite for MergeSeek<RW, S> {
     fn poll_write(
         self: Pin<&mut Self>,
@@ -145,6 +152,7 @@ impl<RW: AsyncWrite + Unpin, S: Unpin> AsyncWrite for MergeSeek<RW, S> {
         return AsyncWrite::poll_write_vectored(Pin::new(&mut self.get_mut().readwrite), cx, bufs);
     }
 }
+#[cfg(feature = "futures")]
 impl<RW: Unpin, S: AsyncSeek + Unpin> AsyncSeek for MergeSeek<RW, S> {
     fn poll_seek(
         self: Pin<&mut Self>,

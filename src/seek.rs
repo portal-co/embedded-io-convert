@@ -1,5 +1,5 @@
 use core::error::Error;
-use std::io;
+// use std::io;
 use core::task::Poll;
 use core::{pin::Pin, task::Context};
 
@@ -29,7 +29,7 @@ mod internals{
 use super::*;
 type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-type Seeked<R: Seek> = impl Future<Output = (R, Result<u64,R::Error>)>;
+pub type Seeked<R: Seek> = impl Future<Output = (R, Result<u64,R::Error>)>;
 
 pub enum State<R: Seek> {
     Idle(R),
@@ -37,7 +37,7 @@ pub enum State<R: Seek> {
     Transitional,
 }
 impl<R: Seek> SimpleAsyncSeeker<R>{
-    fn get_seeked(self: Pin<&mut Self>, pos: io::SeekFrom) -> Pin<Box<Seeked<R>>>{
+    pub(crate) fn get_seeked(self: Pin<&mut Self>, pos: embedded_io_async::SeekFrom) -> Pin<Box<Seeked<R>>>{
         let proj = self.project();
         let mut state = State::Transitional;
         std::mem::swap(proj.state, &mut state);
@@ -56,6 +56,7 @@ impl<R: Seek> SimpleAsyncSeeker<R>{
         return fut;
     }
 }
+#[cfg(feature = "futures")]
 impl<R> AsyncSeek for SimpleAsyncSeeker<R>
 where
     // new: R must now be `'static`, since it's captured
@@ -66,9 +67,9 @@ where
     fn poll_seek(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        pos: io::SeekFrom,
-    ) -> Poll<io::Result<u64>> {
-        let mut fut  = self.as_mut().get_seeked(pos);
+        pos: std::io::SeekFrom,
+    ) -> Poll<std::io::Result<u64>> {
+        let mut fut  = self.as_mut().get_seeked(pos.into());
         let proj = self.project();
 
         match fut.as_mut().poll(cx) {
@@ -95,4 +96,37 @@ where
         }
     }
 }
+}
+impl<R: embedded_io_async::Seek> SimpleAsyncSeeker<R>{
+    fn poll_seek(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        pos: embedded_io_async::SeekFrom,
+    ) -> Poll<Result<u64,R::Error>> {
+        let mut fut  = self.as_mut().get_seeked(pos.into());
+        let proj = self.project();
+
+        match fut.as_mut().poll(cx) {
+            Poll::Ready((inner, result)) => {
+                // tracing::debug!("future was ready!");
+                // if let Ok(n) = &result {
+                //     let n = *n;
+                //     // unsafe { internal_buf.set_len(n) }
+
+                //     // let dst = &mut buf[..n];
+                //     // let src = &internal_buf[..];
+                //     // dst.copy_from_slice(src);
+                // } else {
+                //     // unsafe { internal_buf.set_len(0) }
+                // }
+                *proj.state = internals::State::Idle(inner);
+                Poll::Ready(result.map_err(Into::into))
+            }
+            Poll::Pending => {
+                // tracing::debug!("future was pending!");
+                *proj.state = internals::State::Pending(fut);
+                Poll::Pending
+            }
+        }
+    }
 }

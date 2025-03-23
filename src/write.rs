@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use core::error::Error;
-use std::io;
+// use std::io;
 use core::task::Poll;
 use core::{pin::Pin, task::Context};
 
@@ -28,9 +28,8 @@ impl<R: Write> SimpleAsyncWriter<R> {
 type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 mod internals {
     use super::*;
-    type Written<R: Write> =
-        impl Future<Output = (R, Result<usize,R::Error>)>;
-    type Flushed<R: Write> = impl Future<Output = (R, Result<(),R::Error>)>;
+    pub type Written<R: Write> = impl Future<Output = (R, Result<usize, R::Error>)>;
+    pub type Flushed<R: Write> = impl Future<Output = (R, Result<(), R::Error>)>;
     pub enum State<R: Write> {
         Idle(R),
         Pending(Pin<Box<Written<R>>>),
@@ -38,7 +37,7 @@ mod internals {
         Transitional,
     }
     impl<R: Write> SimpleAsyncWriter<R> {
-        fn get_future(
+        pub(crate) fn get_future(
             self: Pin<&mut Self>,
             buf: Option<&[u8]>,
         ) -> Either<Pin<Box<Written<R>>>, Pin<Box<Flushed<R>>>> {
@@ -67,6 +66,7 @@ mod internals {
             return fut;
         }
     }
+    #[cfg(feature = "futures")]
     impl<R> AsyncWrite for SimpleAsyncWriter<R>
     where
         // new: R must now be `'static`, since it's captured
@@ -78,7 +78,7 @@ mod internals {
             mut self: Pin<&mut Self>,
             cx: &mut Context<'_>,
             buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
+        ) -> Poll<std::io::Result<usize>> {
             let mut fut = self.as_mut().get_future(Some(buf));
             let proj = self.project();
 
@@ -112,7 +112,7 @@ mod internals {
             }
         }
 
-        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
             let mut fut = self.as_mut().get_future(None);
             let proj = self.project();
 
@@ -146,8 +146,84 @@ mod internals {
             }
         }
 
-        fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
             return Poll::Ready(Ok(()));
+        }
+    }
+}
+impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
+    pub fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, R::Error>> {
+        let mut fut = self.as_mut().get_future(Some(buf));
+        let proj = self.project();
+
+        match match fut.as_mut() {
+            Either::Left(a) => a.as_mut().poll(cx).map(Either::Left),
+            Either::Right(b) => b.as_mut().poll(cx).map(Either::Right),
+        } {
+            Poll::Ready(Either::Left((inner, result))) => {
+                // tracing::debug!("future was ready!");
+                // if let Ok(n) = &result {
+                //     let n = *n;
+                //     // unsafe { internal_buf.set_len(n) }
+
+                //     // let dst = &mut buf[..n];
+                //     // let src = &internal_buf[..];
+                //     // dst.copy_from_slice(src);
+                // } else {
+                //     // unsafe { internal_buf.set_len(0) }
+                // }
+                *proj.state = internals::State::Idle(inner);
+                Poll::Ready(result.map_err(|e| e.into()))
+            }
+            _ => {
+                // tracing::debug!("future was pending!");
+                *proj.state = match fut {
+                    Either::Left(a) => internals::State::Pending(a),
+                    Either::Right(b) => internals::State::FPending(b),
+                };
+                Poll::Pending
+            }
+        }
+    }
+
+    pub fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), R::Error>> {
+        let mut fut = self.as_mut().get_future(None);
+        let proj = self.project();
+
+        match match fut.as_mut() {
+            Either::Left(a) => a.as_mut().poll(cx).map(Either::Left),
+            Either::Right(b) => b.as_mut().poll(cx).map(Either::Right),
+        } {
+            Poll::Ready(Either::Right((inner, result))) => {
+                // tracing::debug!("future was ready!");
+                // if let Ok(n) = &result {
+                //     let n = *n;
+                //     // unsafe { internal_buf.set_len(n) }
+
+                //     // let dst = &mut buf[..n];
+                //     // let src = &internal_buf[..];
+                //     // dst.copy_from_slice(src);
+                // } else {
+                //     // unsafe { internal_buf.set_len(0) }
+                // }
+                *proj.state = internals::State::Idle(inner);
+                Poll::Ready(result.map_err(|e| e.into()))
+            }
+            _ => {
+                // tracing::debug!("future was pending!");
+                *proj.state = match fut {
+                    Either::Left(a) => internals::State::Pending(a),
+                    Either::Right(b) => internals::State::FPending(b),
+                };
+                Poll::Pending
+            }
         }
     }
 }

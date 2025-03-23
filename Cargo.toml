@@ -13,6 +13,7 @@ embedded-io-adapters = {version="0.6.1",features=["futures-03"]}
 embedded-io-async = "0.6.1"
 futures = "0.3.30"
 merge-io = "0.3.0"
+no-std-async = "1.1.2"
 # embedded-io-adapters.workspace = true
 # embedded-io-async.workspace = true
 # futures.workspace = true

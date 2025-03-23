@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use embedded_io_async::{ErrorType, Read, Seek, Write};
-use futures::lock::Mutex;
+use no_std_async::Mutex;
+// use futures::lock::Mutex;
 
 pub struct Mutexed<T>(pub Arc<Mutex<T>>);
 impl<T> Clone for Mutexed<T> {

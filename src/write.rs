@@ -1,7 +1,8 @@
-use std::error::Error;
+use alloc::boxed::Box;
+use core::error::Error;
 use std::io;
-use std::task::Poll;
-use std::{pin::Pin, task::Context};
+use core::task::Poll;
+use core::{pin::Pin, task::Context};
 
 use either::Either;
 use embedded_io_async::Write;
@@ -11,13 +12,13 @@ use pin_project::pin_project;
 // use crate::MutexFuture;
 
 #[pin_project]
-pub struct SimpleAsyncWriter<R: Write<Error: Into<std::io::Error>>>
+pub struct SimpleAsyncWriter<R: Write>
 where
     R: embedded_io_async::Write,
 {
     state: internals::State<R>,
 }
-impl<R: Write<Error: Into<std::io::Error>>> SimpleAsyncWriter<R> {
+impl<R: Write> SimpleAsyncWriter<R> {
     pub fn new(r: R) -> Self {
         return Self {
             state: internals::State::Idle(r),
@@ -27,16 +28,16 @@ impl<R: Write<Error: Into<std::io::Error>>> SimpleAsyncWriter<R> {
 type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 mod internals {
     use super::*;
-    type Written<R: Write<Error: Into<std::io::Error>>> =
-        impl Future<Output = (R, io::Result<usize>)>;
-    type Flushed<R: Write<Error: Into<std::io::Error>>> = impl Future<Output = (R, io::Result<()>)>;
-    pub enum State<R: Write<Error: Into<std::io::Error>>> {
+    type Written<R: Write> =
+        impl Future<Output = (R, Result<usize,R::Error>)>;
+    type Flushed<R: Write> = impl Future<Output = (R, Result<(),R::Error>)>;
+    pub enum State<R: Write> {
         Idle(R),
         Pending(Pin<Box<Written<R>>>),
         FPending(Pin<Box<Flushed<R>>>),
         Transitional,
     }
-    impl<R: Write<Error: Into<std::io::Error>>> SimpleAsyncWriter<R> {
+    impl<R: Write> SimpleAsyncWriter<R> {
         fn get_future(
             self: Pin<&mut Self>,
             buf: Option<&[u8]>,
@@ -49,11 +50,11 @@ mod internals {
                 State::Idle(mut inner) => match buf {
                     Some(buf) => Either::Left(Box::pin(async move {
                         let res = inner.write(&buf).await;
-                        (inner, res.map_err(|e| e.into()))
+                        (inner, res)
                     })),
                     None => Either::Right(Box::pin(async move {
                         let res = inner.flush().await;
-                        (inner, res.map_err(|e| e.into()))
+                        (inner, res)
                     })),
                 },
                 State::Pending(fut) => {
@@ -98,7 +99,7 @@ mod internals {
                     //     // unsafe { internal_buf.set_len(0) }
                     // }
                     *proj.state = State::Idle(inner);
-                    Poll::Ready(result)
+                    Poll::Ready(result.map_err(|e| e.into()))
                 }
                 _ => {
                     // tracing::debug!("future was pending!");
@@ -132,7 +133,7 @@ mod internals {
                     //     // unsafe { internal_buf.set_len(0) }
                     // }
                     *proj.state = State::Idle(inner);
-                    Poll::Ready(result)
+                    Poll::Ready(result.map_err(|e| e.into()))
                 }
                 _ => {
                     // tracing::debug!("future was pending!");

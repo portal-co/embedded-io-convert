@@ -1,7 +1,8 @@
-use std::error::Error;
-use std::task::Poll;
-use std::{io, pin::pin};
-use std::{pin::Pin, task::Context};
+use core::error::Error;
+use core::task::Poll;
+use core::{ pin::pin};
+use core::{pin::Pin, task::Context};
+use std::io;
 
 use either::Either;
 use futures::{AsyncRead, Future};
@@ -10,13 +11,13 @@ use pin_project::pin_project;
 // use crate::MutexFuture;
 
 #[pin_project]
-pub struct SimpleAsyncReader<R: embedded_io_async::Read<Error: Into<std::io::Error>>>
+pub struct SimpleAsyncReader<R: embedded_io_async::Read>
 where
     R: embedded_io_async::Read,
 {
     state: internals::State<R>,
 }
-impl<R: embedded_io_async::Read<Error: Into<std::io::Error>>> SimpleAsyncReader<R> {
+impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
     pub fn new(r: R) -> Self {
         return Self {
             state: internals::State::Idle(r, vec![]),
@@ -24,18 +25,20 @@ impl<R: embedded_io_async::Read<Error: Into<std::io::Error>>> SimpleAsyncReader<
     }
 }
 mod internals {
+    use alloc::{boxed::Box, vec::Vec};
+
     use super::*;
     type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-    type DidRead<R: embedded_io_async::Read<Error: Into<std::io::Error>>> =
-        impl Future<Output = (R, Vec<u8>, io::Result<usize>)>;
+    type DidRead<R: embedded_io_async::Read> =
+        impl Future<Output = (R, Vec<u8>, Result<usize,R::Error>)>;
 
-    pub enum State<R: embedded_io_async::Read<Error: Into<std::io::Error>>> {
+    pub enum State<R: embedded_io_async::Read> {
         Idle(R, Vec<u8>),
         Pending(Pin<Box<DidRead<R>>>),
         Transitional,
     }
-    impl<R: embedded_io_async::Read<Error: Into<std::io::Error>>> SimpleAsyncReader<R> {
+    impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
         fn get_fut(self: Pin<&mut Self>, buf: &mut [u8]) -> Pin<Box<DidRead<R>>> {
             let proj = self.project();
             let mut state = State::Transitional;
@@ -49,7 +52,7 @@ mod internals {
                     unsafe { internal_buf.set_len(buf.len()) }
                     let x = Box::pin(async move {
                         let res = inner.read(&mut internal_buf[..]).await;
-                        (inner, internal_buf, res.map_err(|e| e.into()))
+                        (inner, internal_buf, res)
                     });
 
                     x
@@ -93,7 +96,7 @@ mod internals {
                         unsafe { internal_buf.set_len(0) }
                     }
                     *proj.state = State::Idle(inner, internal_buf);
-                    Poll::Ready(result)
+                    Poll::Ready(result.map_err(Into::into))
                 }
                 Poll::Pending => {
                     // tracing::debug!("future was pending!");

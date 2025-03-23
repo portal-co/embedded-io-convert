@@ -1,7 +1,11 @@
 #![allow(incomplete_features)]
 #![feature(return_type_notation, type_alias_impl_trait)]
-
-use std::{pin::Pin, sync::Mutex};
+#![no_std]
+#[macro_use]
+extern crate alloc;
+#[macro_use]
+extern crate std;
+use core::{pin::Pin};
 
 use embedded_io_async::ErrorType;
 use futures::{AsyncRead, AsyncSeek, AsyncWrite, Future};

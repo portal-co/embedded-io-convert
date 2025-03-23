@@ -1,7 +1,7 @@
-use std::error::Error;
+use core::error::Error;
 use std::io;
-use std::task::Poll;
-use std::{pin::Pin, task::Context};
+use core::task::Poll;
+use core::{pin::Pin, task::Context};
 
 use embedded_io_async::{Seek, Write};
 use futures::{AsyncRead, AsyncSeek, AsyncWrite, Future};
@@ -10,30 +10,33 @@ use pin_project::pin_project;
 // use crate::MutexFuture;
 
 #[pin_project]
-pub struct SimpleAsyncSeeker<R: Seek<Error: Into<std::io::Error>>>
+pub struct SimpleAsyncSeeker<R: Seek>
 where
     R: embedded_io_async::Seek,
 {
     state: internals::State<R>,
 }
-impl<R: Seek<Error: Into<std::io::Error>>> SimpleAsyncSeeker<R> {
+impl<R: Seek> SimpleAsyncSeeker<R> {
     pub fn new(r: R) -> Self {
         return Self {
             state: internals::State::Idle(r),
         };
     }
 }
-mod internals{use super::*;
+mod internals{
+    use alloc::boxed::Box;
+
+use super::*;
 type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-type Seeked<R: Seek<Error: Into<std::io::Error>>> = impl Future<Output = (R, io::Result<u64>)>;
+type Seeked<R: Seek> = impl Future<Output = (R, Result<u64,R::Error>)>;
 
-pub enum State<R: Seek<Error: Into<std::io::Error>>> {
+pub enum State<R: Seek> {
     Idle(R),
     Pending(Pin<Box<Seeked<R>>>),
     Transitional,
 }
-impl<R: Seek<Error: Into<std::io::Error>>> SimpleAsyncSeeker<R>{
+impl<R: Seek> SimpleAsyncSeeker<R>{
     fn get_seeked(self: Pin<&mut Self>, pos: io::SeekFrom) -> Pin<Box<Seeked<R>>>{
         let proj = self.project();
         let mut state = State::Transitional;
@@ -82,7 +85,7 @@ where
                 //     // unsafe { internal_buf.set_len(0) }
                 // }
                 *proj.state = State::Idle(inner);
-                Poll::Ready(result)
+                Poll::Ready(result.map_err(Into::into))
             }
             Poll::Pending => {
                 // tracing::debug!("future was pending!");

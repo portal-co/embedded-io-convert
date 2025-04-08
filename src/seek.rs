@@ -37,6 +37,7 @@ pub enum State<R: Seek> {
     Transitional,
 }
 impl<R: Seek> SimpleAsyncSeeker<R>{
+    #[define_opaque(Seeked)]
     pub(crate) fn get_seeked(self: Pin<&mut Self>, pos: embedded_io_async::SeekFrom) -> Pin<Box<Seeked<R>>>{
         let proj = self.project();
         let mut state = State::Transitional;

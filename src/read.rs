@@ -39,6 +39,7 @@ mod internals {
         Transitional,
     }
     impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
+        #[define_opaque(DidRead)]
         pub(crate) fn get_fut(self: Pin<&mut Self>, buf: &mut [u8]) -> Pin<Box<DidRead<R>>> {
             let proj = self.project();
             let mut state = State::Transitional;

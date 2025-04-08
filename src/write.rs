@@ -37,6 +37,7 @@ mod internals {
         Transitional,
     }
     impl<R: Write> SimpleAsyncWriter<R> {
+        #[define_opaque(Written,Flushed)]
         pub(crate) fn get_future(
             self: Pin<&mut Self>,
             buf: Option<&[u8]>,

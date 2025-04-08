@@ -1,6 +1,6 @@
 [package]
 name = "embedded-io-convert"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "CC0-1.0"
 description = "Convert embedded-io-async types back to futures ones (nightly only)"

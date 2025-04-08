@@ -16,6 +16,7 @@ pub mod mutex;
 pub mod read;
 pub mod seek;
 pub mod write;
+#[cfg(feature = "futures")]
 pub use embedded_io_adapters::futures_03 as from;
 #[cfg(feature = "futures")]
 pub fn read_writer<'a,

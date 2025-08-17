@@ -9,6 +9,8 @@ use embedded_io_async::Write;
 use futures::{AsyncRead, AsyncWrite, Future};
 use pin_project::pin_project;
 
+use crate::write::internals::WriteExt;
+
 // use crate::MutexFuture;
 
 #[pin_project]
@@ -28,21 +30,22 @@ impl<R: Write> SimpleAsyncWriter<R> {
 type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 mod internals {
     use super::*;
-    pub type Written<R: Write> = impl Future<Output = (R, Result<usize, R::Error>)>;
-    pub type Flushed<R: Write> = impl Future<Output = (R, Result<(), R::Error>)>;
-    pub enum State<R: Write> {
-        Idle(R),
-        Pending(Pin<Box<Written<R>>>),
-        FPending(Pin<Box<Flushed<R>>>),
-        Transitional,
-    }
-    impl<R: Write> SimpleAsyncWriter<R> {
-        #[define_opaque(Written,Flushed)]
-        pub(crate) fn get_future(
-            self: Pin<&mut Self>,
+    pub trait WriteExt: embedded_io_async::Write + Sized {
+        type Written: Future<Output = (Self, Result<usize, Self::Error>)>;
+        type Flushed: Future<Output = (Self, Result<(), Self::Error>)>;
+        fn get_future(
+            this: Pin<&mut SimpleAsyncWriter<Self>>,
             buf: Option<&[u8]>,
-        ) -> Either<Pin<Box<Written<R>>>, Pin<Box<Flushed<R>>>> {
-            let proj = self.project();
+        ) -> Either<Pin<Box<Self::Written>>, Pin<Box<Self::Flushed>>>;
+    }
+    impl<R: embedded_io_async::Write> WriteExt for R{
+        type Written = impl Future<Output = (Self, Result<usize, Self::Error>)>;
+        type Flushed = impl Future<Output = (Self, Result<(), Self::Error>)>;
+        fn get_future(
+              this: Pin<&mut SimpleAsyncWriter<Self>>,
+            buf: Option<&[u8]>,
+        ) -> Either<Pin<Box<Self::Written>>, Pin<Box<Self::Flushed>>> {
+            let proj = this.project();
             let mut state = State::Transitional;
             std::mem::swap(proj.state, &mut state);
             let buf = buf.map(|a| a.to_vec());
@@ -67,6 +70,14 @@ mod internals {
             return fut;
         }
     }
+    // pub type Written<R: Write> = impl Future<Output = (R, Result<usize, R::Error>)>;
+    // pub type Flushed<R: Write> = impl Future<Output = (R, Result<(), R::Error>)>;
+    pub enum State<R: Write> {
+        Idle(R),
+        Pending(Pin<Box<<R as WriteExt>::Written>>),
+        FPending(Pin<Box<<R as WriteExt>::Flushed>>),
+        Transitional,
+    }
     #[cfg(feature = "futures")]
     impl<R> AsyncWrite for SimpleAsyncWriter<R>
     where
@@ -80,7 +91,7 @@ mod internals {
             cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<std::io::Result<usize>> {
-            let mut fut = self.as_mut().get_future(Some(buf));
+            let mut fut = WriteExt::get_future( self.as_mut(),Some(buf));
             let proj = self.project();
 
             match match fut.as_mut() {
@@ -114,7 +125,7 @@ mod internals {
         }
 
         fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            let mut fut = self.as_mut().get_future(None);
+            let mut fut =WriteExt::get_future( self.as_mut(),None);
             let proj = self.project();
 
             match match fut.as_mut() {
@@ -158,7 +169,7 @@ impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, R::Error>> {
-        let mut fut = self.as_mut().get_future(Some(buf));
+        let mut fut = WriteExt::get_future( self.as_mut(),Some(buf));
         let proj = self.project();
 
         match match fut.as_mut() {
@@ -195,7 +206,7 @@ impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), R::Error>> {
-        let mut fut = self.as_mut().get_future(None);
+        let mut fut = WriteExt::get_future( self.as_mut(),None);
         let proj = self.project();
 
         match match fut.as_mut() {

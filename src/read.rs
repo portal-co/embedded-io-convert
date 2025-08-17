@@ -8,6 +8,8 @@ use either::Either;
 use futures::{AsyncRead, Future};
 use pin_project::pin_project;
 
+use crate::read::internals::DidRead;
+
 // use crate::MutexFuture;
 
 #[pin_project]
@@ -30,18 +32,14 @@ mod internals {
     use super::*;
     type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-    pub type DidRead<R: embedded_io_async::Read> =
-        impl Future<Output = (R, Vec<u8>, Result<usize, R::Error>)>;
-
-    pub enum State<R: embedded_io_async::Read> {
-        Idle(R, Vec<u8>),
-        Pending(Pin<Box<DidRead<R>>>),
-        Transitional,
+    pub(crate)trait DidRead: embedded_io_async::Read + Sized {
+        type T: Future<Output = (Self, Vec<u8>, Result<usize, Self::Error>)>;
+        fn get_fut(this: Pin<&mut SimpleAsyncReader<Self>>, buf: &mut [u8]) -> Pin<Box<Self::T>>;
     }
-    impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
-        #[define_opaque(DidRead)]
-        pub(crate) fn get_fut(self: Pin<&mut Self>, buf: &mut [u8]) -> Pin<Box<DidRead<R>>> {
-            let proj = self.project();
+    impl<R: embedded_io_async::Read> DidRead for R {
+        type T = impl Future<Output = (Self, Vec<u8>, Result<usize, Self::Error>)>;
+        fn get_fut(this: Pin<&mut SimpleAsyncReader<Self>>, buf: &mut [u8]) -> Pin<Box<Self::T>> {
+            let proj = this.project();
             let mut state = State::Transitional;
             std::mem::swap(proj.state, &mut state);
 
@@ -68,6 +66,44 @@ mod internals {
         }
     }
 
+    // pub type DidRead<R: embedded_io_async::Read> =
+    //     impl Future<Output = (R, Vec<u8>, Result<usize, R::Error>)>;
+
+    pub enum State<R: embedded_io_async::Read> {
+        Idle(R, Vec<u8>),
+        Pending(Pin<Box<<R as DidRead>::T>>),
+        Transitional,
+    }
+    // impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
+    //     // #[define_opaque(DidRead)]
+    //     pub(crate) fn get_fut(self: Pin<&mut Self>, buf: &mut [u8]) -> Pin<Box<DidRead<R>>> {
+    //         let proj = self.project();
+    //         let mut state = State::Transitional;
+    //         std::mem::swap(proj.state, &mut state);
+
+    //         let mut fut = match state {
+    //             State::Idle(mut inner, mut internal_buf) => {
+    //                 // tracing::debug!("getting new future...");
+    //                 internal_buf.clear();
+    //                 internal_buf.reserve(buf.len());
+    //                 unsafe { internal_buf.set_len(buf.len()) }
+    //                 let x = Box::pin(async move {
+    //                     let res = inner.read(&mut internal_buf[..]).await;
+    //                     (inner, internal_buf, res)
+    //                 });
+
+    //                 x
+    //             }
+    //             State::Pending(fut) => {
+    //                 // tracing::debug!("polling existing future...");
+    //                 fut
+    //             }
+    //             State::Transitional => unreachable!(),
+    //         };
+    //         return fut;
+    //     }
+    // }
+
     #[cfg(feature = "futures")]
     impl<R> AsyncRead for SimpleAsyncReader<R>
     where
@@ -82,7 +118,7 @@ mod internals {
             cx: &mut Context<'_>,
             buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
-            let mut fut = self.as_mut().get_fut(buf);
+            let mut fut = DidRead::get_fut(self.as_mut(),buf);
             let proj = self.project();
 
             match fut.as_mut().poll(cx) {
@@ -110,13 +146,13 @@ mod internals {
         }
     }
 }
-impl<R: embedded_io_async::Read<Error = E>,E> SimpleAsyncReader<R> {
+impl<R: embedded_io_async::Read<Error = E>, E> SimpleAsyncReader<R> {
     pub fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize, E>> {
-        let mut fut = self.as_mut().get_fut(buf);
+        let mut fut = DidRead::get_fut(self.as_mut(),buf);
         let proj = self.project();
 
         match fut.as_mut().poll(cx) {

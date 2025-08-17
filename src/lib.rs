@@ -1,5 +1,5 @@
 #![allow(incomplete_features)]
-#![feature(return_type_notation, type_alias_impl_trait)]
+#![feature(return_type_notation, impl_trait_in_assoc_type)]
 #![no_std]
 #[macro_use]
 extern crate alloc;

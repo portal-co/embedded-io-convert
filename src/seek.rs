@@ -1,16 +1,12 @@
 use core::error::Error;
 // use std::io;
+use crate::seek::internals::SeekExt;
 use core::task::Poll;
 use core::{pin::Pin, task::Context};
-
 use embedded_io_async::{Seek, Write};
 use futures::{AsyncRead, AsyncSeek, AsyncWrite, Future};
 use pin_project::pin_project;
-
-use crate::seek::internals::SeekExt;
-
 // use crate::MutexFuture;
-
 #[pin_project]
 pub struct SimpleAsyncSeeker<R: Seek>
 where
@@ -26,11 +22,9 @@ impl<R: Seek> SimpleAsyncSeeker<R> {
     }
 }
 mod internals {
-    use alloc::boxed::Box;
-
     use super::*;
+    use alloc::boxed::Box;
     type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
     pub(crate) trait SeekExt: embedded_io_async::Seek + Sized {
         type Seeked: Future<Output = (Self, Result<u64, Self::Error>)>;
         fn get_seeked(
@@ -40,7 +34,6 @@ mod internals {
     }
     impl<R: embedded_io_async::Seek> SeekExt for R {
         type Seeked = impl Future<Output = (Self, Result<u64, Self::Error>)>;
-
         fn get_seeked(
             this: Pin<&mut SimpleAsyncSeeker<Self>>,
             pos: embedded_io_async::SeekFrom,
@@ -63,13 +56,11 @@ mod internals {
             return fut;
         }
     }
-
     pub enum State<R: Seek> {
         Idle(R),
         Pending(Pin<Box<<R as SeekExt>::Seeked>>),
         Transitional,
     }
-
     #[cfg(feature = "futures")]
     impl<R> AsyncSeek for SimpleAsyncSeeker<R>
     where
@@ -85,14 +76,12 @@ mod internals {
         ) -> Poll<std::io::Result<u64>> {
             let mut fut = SeekExt::get_seeked(self.as_mut(), pos.into());
             let proj = self.project();
-
             match fut.as_mut().poll(cx) {
                 Poll::Ready((inner, result)) => {
                     // tracing::debug!("future was ready!");
                     // if let Ok(n) = &result {
                     //     let n = *n;
                     //     // unsafe { internal_buf.set_len(n) }
-
                     //     // let dst = &mut buf[..n];
                     //     // let src = &internal_buf[..];
                     //     // dst.copy_from_slice(src);
@@ -119,14 +108,12 @@ impl<R: embedded_io_async::Seek> SimpleAsyncSeeker<R> {
     ) -> Poll<Result<u64, R::Error>> {
         let mut fut = SeekExt::get_seeked(self.as_mut(), pos.into());
         let proj = self.project();
-
         match fut.as_mut().poll(cx) {
             Poll::Ready((inner, result)) => {
                 // tracing::debug!("future was ready!");
                 // if let Ok(n) = &result {
                 //     let n = *n;
                 //     // unsafe { internal_buf.set_len(n) }
-
                 //     // let dst = &mut buf[..n];
                 //     // let src = &internal_buf[..];
                 //     // dst.copy_from_slice(src);

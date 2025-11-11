@@ -6,12 +6,10 @@ extern crate alloc;
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
-use core::{pin::Pin};
-
+use core::pin::Pin;
 use embedded_io_async::ErrorType;
 #[cfg(feature = "futures")]
 use futures::{AsyncRead, AsyncSeek, AsyncWrite, Future};
-
 pub mod mutex;
 pub mod read;
 pub mod seek;
@@ -19,7 +17,8 @@ pub mod write;
 #[cfg(feature = "futures")]
 pub use embedded_io_adapters::futures_03 as from;
 #[cfg(feature = "futures")]
-pub fn read_writer<'a,
+pub fn read_writer<
+    'a,
     E: embedded_io_async::Read<read(..): Send>
         + embedded_io_async::Write<write(..): Send, flush(..): Send>
         + Send
@@ -37,13 +36,7 @@ where
     return merge_io::MergeIO::new(a, b);
 }
 #[cfg(feature = "futures")]
-pub fn read_writer_unsend<
-'a,
-    E: embedded_io_async::Read
-        + embedded_io_async::Write
-        + Send
-        + 'a,
->(
+pub fn read_writer_unsend<'a, E: embedded_io_async::Read + embedded_io_async::Write + Send + 'a>(
     a: E,
 ) -> impl AsyncRead + AsyncWrite + Unpin + 'a
 where
@@ -57,7 +50,7 @@ where
 }
 #[cfg(feature = "futures")]
 pub fn read_write_seeeker<
-'a,
+    'a,
     E: embedded_io_async::Read<read(..): Send>
         + embedded_io_async::Write<write(..): Send, flush(..): Send>
         + embedded_io_async::Seek<seek(..): Send>
@@ -80,12 +73,8 @@ where
 }
 #[cfg(feature = "futures")]
 pub fn read_write_seeeker_unsend<
-'a,
-    E: embedded_io_async::Read
-        + embedded_io_async::Write
-        + embedded_io_async::Seek
-        + Send
-        + 'a,
+    'a,
+    E: embedded_io_async::Read + embedded_io_async::Write + embedded_io_async::Seek + Send + 'a,
 >(
     a: E,
 ) -> impl AsyncRead + AsyncWrite + AsyncSeek + Unpin + 'a
@@ -131,14 +120,12 @@ impl<RW: AsyncWrite + Unpin, S: Unpin> AsyncWrite for MergeSeek<RW, S> {
     ) -> std::task::Poll<std::io::Result<usize>> {
         return AsyncWrite::poll_write(Pin::new(&mut self.get_mut().readwrite), cx, buf);
     }
-
     fn poll_flush(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         return AsyncWrite::poll_flush(Pin::new(&mut self.get_mut().readwrite), cx);
     }
-
     fn poll_close(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,

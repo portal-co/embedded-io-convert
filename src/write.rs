@@ -1,18 +1,14 @@
 use alloc::boxed::Box;
 use core::error::Error;
 // use std::io;
+use crate::write::internals::WriteExt;
 use core::task::Poll;
 use core::{pin::Pin, task::Context};
-
 use either::Either;
 use embedded_io_async::Write;
 use futures::{AsyncRead, AsyncWrite, Future};
 use pin_project::pin_project;
-
-use crate::write::internals::WriteExt;
-
 // use crate::MutexFuture;
-
 #[pin_project]
 pub struct SimpleAsyncWriter<R: Write>
 where
@@ -38,11 +34,11 @@ mod internals {
             buf: Option<&[u8]>,
         ) -> Either<Pin<Box<Self::Written>>, Pin<Box<Self::Flushed>>>;
     }
-    impl<R: embedded_io_async::Write> WriteExt for R{
+    impl<R: embedded_io_async::Write> WriteExt for R {
         type Written = impl Future<Output = (Self, Result<usize, Self::Error>)>;
         type Flushed = impl Future<Output = (Self, Result<(), Self::Error>)>;
         fn get_future(
-              this: Pin<&mut SimpleAsyncWriter<Self>>,
+            this: Pin<&mut SimpleAsyncWriter<Self>>,
             buf: Option<&[u8]>,
         ) -> Either<Pin<Box<Self::Written>>, Pin<Box<Self::Flushed>>> {
             let proj = this.project();
@@ -91,9 +87,8 @@ mod internals {
             cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<std::io::Result<usize>> {
-            let mut fut = WriteExt::get_future( self.as_mut(),Some(buf));
+            let mut fut = WriteExt::get_future(self.as_mut(), Some(buf));
             let proj = self.project();
-
             match match fut.as_mut() {
                 Either::Left(a) => a.as_mut().poll(cx).map(Either::Left),
                 Either::Right(b) => b.as_mut().poll(cx).map(Either::Right),
@@ -103,7 +98,6 @@ mod internals {
                     // if let Ok(n) = &result {
                     //     let n = *n;
                     //     // unsafe { internal_buf.set_len(n) }
-
                     //     // let dst = &mut buf[..n];
                     //     // let src = &internal_buf[..];
                     //     // dst.copy_from_slice(src);
@@ -123,11 +117,9 @@ mod internals {
                 }
             }
         }
-
         fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            let mut fut =WriteExt::get_future( self.as_mut(),None);
+            let mut fut = WriteExt::get_future(self.as_mut(), None);
             let proj = self.project();
-
             match match fut.as_mut() {
                 Either::Left(a) => a.as_mut().poll(cx).map(Either::Left),
                 Either::Right(b) => b.as_mut().poll(cx).map(Either::Right),
@@ -137,7 +129,6 @@ mod internals {
                     // if let Ok(n) = &result {
                     //     let n = *n;
                     //     // unsafe { internal_buf.set_len(n) }
-
                     //     // let dst = &mut buf[..n];
                     //     // let src = &internal_buf[..];
                     //     // dst.copy_from_slice(src);
@@ -157,7 +148,6 @@ mod internals {
                 }
             }
         }
-
         fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
             return Poll::Ready(Ok(()));
         }
@@ -169,9 +159,8 @@ impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, R::Error>> {
-        let mut fut = WriteExt::get_future( self.as_mut(),Some(buf));
+        let mut fut = WriteExt::get_future(self.as_mut(), Some(buf));
         let proj = self.project();
-
         match match fut.as_mut() {
             Either::Left(a) => a.as_mut().poll(cx).map(Either::Left),
             Either::Right(b) => b.as_mut().poll(cx).map(Either::Right),
@@ -181,7 +170,6 @@ impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
                 // if let Ok(n) = &result {
                 //     let n = *n;
                 //     // unsafe { internal_buf.set_len(n) }
-
                 //     // let dst = &mut buf[..n];
                 //     // let src = &internal_buf[..];
                 //     // dst.copy_from_slice(src);
@@ -201,14 +189,12 @@ impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
             }
         }
     }
-
     pub fn poll_flush(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), R::Error>> {
-        let mut fut = WriteExt::get_future( self.as_mut(),None);
+        let mut fut = WriteExt::get_future(self.as_mut(), None);
         let proj = self.project();
-
         match match fut.as_mut() {
             Either::Left(a) => a.as_mut().poll(cx).map(Either::Left),
             Either::Right(b) => b.as_mut().poll(cx).map(Either::Right),
@@ -218,7 +204,6 @@ impl<R: embedded_io_async::Write> SimpleAsyncWriter<R> {
                 // if let Ok(n) = &result {
                 //     let n = *n;
                 //     // unsafe { internal_buf.set_len(n) }
-
                 //     // let dst = &mut buf[..n];
                 //     // let src = &internal_buf[..];
                 //     // dst.copy_from_slice(src);

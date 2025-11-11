@@ -3,15 +3,11 @@ use core::pin::pin;
 use core::task::Poll;
 use core::{pin::Pin, task::Context};
 // use std::io;
-
+use crate::read::internals::DidRead;
 use either::Either;
 use futures::{AsyncRead, Future};
 use pin_project::pin_project;
-
-use crate::read::internals::DidRead;
-
 // use crate::MutexFuture;
-
 #[pin_project]
 pub struct SimpleAsyncReader<R: embedded_io_async::Read>
 where
@@ -27,12 +23,10 @@ impl<R: embedded_io_async::Read> SimpleAsyncReader<R> {
     }
 }
 mod internals {
-    use alloc::{boxed::Box, vec::Vec};
-
     use super::*;
+    use alloc::{boxed::Box, vec::Vec};
     type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-
-    pub(crate)trait DidRead: embedded_io_async::Read + Sized {
+    pub(crate) trait DidRead: embedded_io_async::Read + Sized {
         type T: Future<Output = (Self, Vec<u8>, Result<usize, Self::Error>)>;
         fn get_fut(this: Pin<&mut SimpleAsyncReader<Self>>, buf: &mut [u8]) -> Pin<Box<Self::T>>;
     }
@@ -42,7 +36,6 @@ mod internals {
             let proj = this.project();
             let mut state = State::Transitional;
             std::mem::swap(proj.state, &mut state);
-
             let mut fut = match state {
                 State::Idle(mut inner, mut internal_buf) => {
                     // tracing::debug!("getting new future...");
@@ -53,7 +46,6 @@ mod internals {
                         let res = inner.read(&mut internal_buf[..]).await;
                         (inner, internal_buf, res)
                     });
-
                     x
                 }
                 State::Pending(fut) => {
@@ -65,10 +57,8 @@ mod internals {
             return fut;
         }
     }
-
     // pub type DidRead<R: embedded_io_async::Read> =
     //     impl Future<Output = (R, Vec<u8>, Result<usize, R::Error>)>;
-
     pub enum State<R: embedded_io_async::Read> {
         Idle(R, Vec<u8>),
         Pending(Pin<Box<<R as DidRead>::T>>),
@@ -80,7 +70,6 @@ mod internals {
     //         let proj = self.project();
     //         let mut state = State::Transitional;
     //         std::mem::swap(proj.state, &mut state);
-
     //         let mut fut = match state {
     //             State::Idle(mut inner, mut internal_buf) => {
     //                 // tracing::debug!("getting new future...");
@@ -91,7 +80,6 @@ mod internals {
     //                     let res = inner.read(&mut internal_buf[..]).await;
     //                     (inner, internal_buf, res)
     //                 });
-
     //                 x
     //             }
     //             State::Pending(fut) => {
@@ -103,7 +91,6 @@ mod internals {
     //         return fut;
     //     }
     // }
-
     #[cfg(feature = "futures")]
     impl<R> AsyncRead for SimpleAsyncReader<R>
     where
@@ -118,16 +105,14 @@ mod internals {
             cx: &mut Context<'_>,
             buf: &mut [u8],
         ) -> Poll<std::io::Result<usize>> {
-            let mut fut = DidRead::get_fut(self.as_mut(),buf);
+            let mut fut = DidRead::get_fut(self.as_mut(), buf);
             let proj = self.project();
-
             match fut.as_mut().poll(cx) {
                 Poll::Ready((inner, mut internal_buf, result)) => {
                     // tracing::debug!("future was ready!");
                     if let Ok(n) = &result {
                         let n = *n;
                         unsafe { internal_buf.set_len(n) }
-
                         let dst = &mut buf[..n];
                         let src = &internal_buf[..];
                         dst.copy_from_slice(src);
@@ -152,16 +137,14 @@ impl<R: embedded_io_async::Read<Error = E>, E> SimpleAsyncReader<R> {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<Result<usize, E>> {
-        let mut fut = DidRead::get_fut(self.as_mut(),buf);
+        let mut fut = DidRead::get_fut(self.as_mut(), buf);
         let proj = self.project();
-
         match fut.as_mut().poll(cx) {
             Poll::Ready((inner, mut internal_buf, result)) => {
                 // tracing::debug!("future was ready!");
                 if let Ok(n) = &result {
                     let n = *n;
                     unsafe { internal_buf.set_len(n) }
-
                     let dst = &mut buf[..n];
                     let src = &internal_buf[..];
                     dst.copy_from_slice(src);

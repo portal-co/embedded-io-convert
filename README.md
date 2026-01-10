@@ -1,13 +1,14 @@
 # embedded-io-convert
 
 ## Description
-Project embedded-io-convert
+Utilities to convert between `embedded-io-async` types and standard `futures` types (nightly only).
 
 ## Goals
-- [ ] Add project goals
+- [ ] Bridge embedded and async ecosystem types
+- [ ] Provide adapter implementations
 
 ## Progress
-- [ ] Initial setup
+- [ ] Crate setup (v0.2.0)
 
 ---
 *AI assisted*
